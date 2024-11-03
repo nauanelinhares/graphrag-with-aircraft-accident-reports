@@ -1,7 +1,5 @@
-import time
 import streamlit as st
-import avwx
-
+import requests
 import os
 import nest_asyncio
 import pandas as pd
@@ -22,11 +20,15 @@ from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.experimental.query_engine.pandas import PandasInstructionParser
 from llama_index.postprocessor.cohere_rerank import CohereRerank
 import matplotlib.pyplot as plt
+import random
 from llama_index.experimental.query_engine import PandasQueryEngine
 from llama_index.llms.openai import OpenAI
 from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
 from dotenv import load_dotenv
 import nest_asyncio
+from lxml import html
+from llama_index.readers.web import SimpleWebPageReader
+
 
 
 # Load environment variables from .env file
@@ -46,27 +48,75 @@ graph_store = Neo4jPropertyGraphStore(
     url="bolt://localhost:7687",
 )
 
-def chat():
+@st.cache_data
+def loadSettings():
     llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0.25)
     Settings.llm = llm
     Settings.embed_model = HuggingFaceEmbedding("mixedbread-ai/mxbai-embed-2d-large-v1", trust_remote_code=True)
     Settings.chunk_size = 512
 
-def getDocs(query_str):
+def getLinks(query_str):
     llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0)
     prompt = f"""
     Create a list of links based on the following query: {query_str}
-    Example Output: 'https://www.example.com', 'https://www.example2.com'
+    Example Output: https://www.example.com, https://www.example2.com
     
     I don't want other information, just the links.
     """
     resps= llm.complete(prompt=prompt)
-    print(resps)
     resps = resps.text.split(",")
-    for resp in resps:
-        print(resp)
+    return resps
+
+def readLinks(links):
+    llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0)
+    length = len(links)
+    if length > 0 :
+        url = links[random.randint(0, length-1)]
+        response = requests.get(url)
+        response.raise_for_status()  # V
+        tree = html.fromstring(response.content)
+        cenipaLinks = tree.xpath('//a[contains(text(), "Clique aqui")]')
+        if cenipaLinks:  
+            for link in cenipaLinks:
+                getPDFsLinksFromCenipa(link.get('href'))
+            docs = SimpleDirectoryReader("./Acidentes").load_data()
+            index = createAnIndex(llm, docs)
+            return index
+
+        else:
+            docs = SimpleWebPageReader(html_to_text=True).load_data([url])
+            index = createAnIndex(llm, docs)
+            return index
+                                                                    
+            
+def getPdfsFromCenipa(link, i):
+    report_response = requests.get(link)
+    report_response.raise_for_status()
+    with open(f'Acidentes/report_{i}.pdf', 'wb') as file:
+        file.write(report_response.content)
+        print(f'Relatório {i} baixado com sucesso.')
+
+
+
+def getPDFsLinksFromCenipa(cenipaLink):
+    response = requests.get(cenipaLink)
+    response.raise_for_status()  # Verifica se a requisição foi bem-sucedida
+
+        # Parseando o conteúdo HTML da página
+    tree = html.fromstring(response.content)
+    links = tree.xpath('//a[@title="Relatório Final em Português"]')
+    base_url = 'https://sistema.cenipa.fab.mil.br/cenipa/paginas/relatorios/'
+    
+    for i, link in enumerate(links, start=1):
+        link_url =  link.get('href')
+        report_url = base_url +link_url
+        getPdfsFromCenipa(report_url, i)
+
+
+    
 
 def createAnIndex(llm, docs):
+    loadSettings()
     index = PropertyGraphIndex.from_documents(
     docs,
     graph_store=graph_store,
@@ -171,15 +221,22 @@ def loadAdviceQueryEngine():
 
 st.title('Conselhos de ocorrências aeronáuticas')
 
-
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
+if "savedLinks" not in st.session_state:
+    st.session_state.savedLinks = ''
+    
+if "index" not in st.session_state:
+    st.session_state.index = ''
+    
 with st.spinner('Carregando banco de dados...'):
     p = loadAdviceQueryEngine()
 
 if st.button("Limpar chat"):
     st.session_state.messages = []
+    st.session_state.savedLinks = ''
+    st.session_state.index = ''
     
 for message in st.session_state.messages:
     st.chat_message(message["role"]).markdown(message["content"])
@@ -192,11 +249,27 @@ if question := st.chat_input("Digite sua pergunta aqui..."):
         
         response = p.run(query_str=f'{question}')
         
-        message.write(response.message.content)
         
-        getDocs(response.message.content)
-        # message.write(responseToKwowledgeQuery.message.content)
-        st.session_state.messages.append({"role": "assistant", "content": response.message.content})
+      
+        
+        links = getLinks(response.message.content)
+        if links != st.session_state.savedLinks and st.session_state.index == '':
+            st.session_state.index = readLinks(links)
+            st.session_state.savedLinks = links
+            st.session_state.index.property_graph_store.save_networkx_graph(name="./kg.html")
+            
+        if st.session_state.index:
+            
+            query_engine = st.session_state.index.as_query_engine(include_text=True)
+
+            resp = query_engine.query(question)
+            message.write(str(resp))
+                
+            st.session_state.messages.append({"role": "assistant", "content": str(resp)})
+        else:
+            message.write(response.message.content)
+            st.session_state.messages.append({"role": "assistant", "content": response.message.content})
+
 
 
 
