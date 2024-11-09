@@ -1,0 +1,8 @@
+.env
+.envrc
+Docs/
+vra/
+data/
+lib/
+plugins/
+storage/
