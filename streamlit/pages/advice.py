@@ -50,13 +50,13 @@ graph_store = Neo4jPropertyGraphStore(
 
 @st.cache_data
 def loadSettings():
-    llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0.25)
+    llm = OpenAI(model="gpt-4o", api_key=OPEN_API_KEY, temperature=0.25)
     Settings.llm = llm
-    Settings.embed_model = HuggingFaceEmbedding("mixedbread-ai/mxbai-embed-2d-large-v1", trust_remote_code=True)
+    Settings.embed_model = HuggingFaceEmbedding("dunzhang/stella_en_400M_v5", trust_remote_code=True)
     Settings.chunk_size = 512
 
 def getLinks(query_str):
-    llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0)
+    llm = OpenAI(model="gpt-4o", api_key=OPEN_API_KEY, temperature=0)
     prompt = f"""
     Create a list of links based on the following query: {query_str}
     Example Output: https://www.example.com, https://www.example2.com
@@ -68,10 +68,9 @@ def getLinks(query_str):
     return resps
 
 def readLinks(links):
-    llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0)
-    length = len(links)
-    if length > 0 :
-        url = links[random.randint(0, length-1)]
+    llm = OpenAI(model="gpt-4o", api_key=OPEN_API_KEY, temperature=0)
+    docs = []
+    for url in links:
         response = requests.get(url)
         response.raise_for_status()  # V
         tree = html.fromstring(response.content)
@@ -79,22 +78,25 @@ def readLinks(links):
         if cenipaLinks:  
             for link in cenipaLinks:
                 getPDFsLinksFromCenipa(link.get('href'))
-            docs = SimpleDirectoryReader("./Acidentes").load_data()
-            index = createAnIndex(llm, docs)
-            return index
-
         else:
-            docs = SimpleWebPageReader(html_to_text=True).load_data([url])
-            index = createAnIndex(llm, docs)
-            return index
+            doc = SimpleWebPageReader(html_to_text=True).load_data([url])
+            docs = docs + doc
+    try:       
+        doc = SimpleDirectoryReader("./Acidentes").load_data()
+        docs = docs + doc
+    except:
+        pass
+    
+    index = createAnIndex(llm, docs)
+    return index
                                                                     
             
-def getPdfsFromCenipa(link, i):
+def getPdfsFromCenipa(link, name):
     report_response = requests.get(link)
     report_response.raise_for_status()
-    with open(f'Acidentes/report_{i}.pdf', 'wb') as file:
+    with open(f'Acidentes/report_{name}.pdf', 'wb') as file:
         file.write(report_response.content)
-        print(f'Relatório {i} baixado com sucesso.')
+        print(f'Relatório {name} baixado com sucesso.')
 
 
 
@@ -107,10 +109,10 @@ def getPDFsLinksFromCenipa(cenipaLink):
     links = tree.xpath('//a[@title="Relatório Final em Português"]')
     base_url = 'https://sistema.cenipa.fab.mil.br/cenipa/paginas/relatorios/'
     
-    for i, link in enumerate(links, start=1):
+    for _, link in enumerate(links, start=1):
         link_url =  link.get('href')
         report_url = base_url +link_url
-        getPdfsFromCenipa(report_url, i)
+        getPdfsFromCenipa(report_url, link_url)
 
 
     
@@ -128,6 +130,7 @@ def createAnIndex(llm, docs):
     show_progress=True,
     Settings=Settings,
     ) 
+    
     return index
 
 
@@ -135,7 +138,7 @@ def createAnIndex(llm, docs):
 @st.cache_data
 def loadAdviceQueryEngine():
     df = pd.read_csv("./ocorrencias.csv")
-    llm = OpenAI(model="gpt-4o-mini-2024-07-18", api_key=OPEN_API_KEY, temperature=0.25)
+    llm = OpenAI(model="gpt-4o", api_key=OPEN_API_KEY, temperature=0.25)
     instruction_str = (
     "1. Convert the query to executable Python code using Pandas.\n"
     "2. In general we will do like something df[df['History'].fillna('').str.contains('keyword', case=False)]"
@@ -246,13 +249,15 @@ if question := st.chat_input("Digite sua pergunta aqui..."):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.spinner('Carregando resposta...'):
         message = st.chat_message("assistant")   
-        
         response = p.run(query_str=f'{question}')
+        message.write(response.message.content)
+        st.session_state.messages.append({"role": "assistant", "content": response.message.content})
         
-        
-      
-        
-        links = getLinks(response.message.content)
+        try:
+            links = getLinks(response.message.content)
+        except:
+            message.write("Tente novamente com outra pergunta.")
+            
         if links != st.session_state.savedLinks and st.session_state.index == '':
             st.session_state.index = readLinks(links)
             st.session_state.savedLinks = links
@@ -260,15 +265,13 @@ if question := st.chat_input("Digite sua pergunta aqui..."):
             
         if st.session_state.index:
             
-            query_engine = st.session_state.index.as_query_engine(include_text=True)
+            query_engine = st.session_state.index.as_query_engine(include_text=True, llm=OpenAI(model="gpt-4o", api_key=OPEN_API_KEY, temperature=0.0))
 
             resp = query_engine.query(question)
             message.write(str(resp))
                 
             st.session_state.messages.append({"role": "assistant", "content": str(resp)})
-        else:
-            message.write(response.message.content)
-            st.session_state.messages.append({"role": "assistant", "content": response.message.content})
+
 
 
 

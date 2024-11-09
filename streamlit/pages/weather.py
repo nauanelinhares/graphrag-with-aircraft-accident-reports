@@ -199,6 +199,8 @@ st.markdown(f"**Fenômenos meteorológicos:** {str(metar.translations.wx_codes)}
 if st.button("Limpar chat"):
     st.session_state.messages = []
     
+IsAboutWeather = st.checkbox("Sobre o tempo atual")
+    
 for message in st.session_state.messages:
     st.chat_message(message["role"]).markdown(message["content"])
 
@@ -207,7 +209,24 @@ if question := st.chat_input("Digite sua pergunta aqui..."):
     st.session_state.messages.append({"role": "user", "content": question})
     with st.spinner('Carregando resposta...'):
         message = st.chat_message("assistant")   
-        response = p.run(query_str=question)
+        
+        if IsAboutWeather:
+            response = p.run(query_str=f"""
+                             {question}
+                             Weather Now:
+                                - Station: {metar.station.gps}
+                                - Wind Direction: {metar.data.wind_direction.value}°
+                                - Wind Speed: {metar.data.wind_speed.value} knots
+                                - Temperature: {metar.data.temperature.value}°C
+                                - Dew Point: {metar.data.dewpoint.value}°C
+                                - Visibility: {metar.data.visibility.value} meters
+                                - Pressure: {metar.data.pressure_altitude} hPa
+                                - Flight Rules: {metar.data.flight_rules}
+                                - Clouds: {str(metar.translations.clouds)}
+                                - Weather Codes: {str(metar.translations.wx_codes)}
+                             """)
+        else:
+            response = p.run(query_str=question)
         message.write(response.message.content)
         st.session_state.messages.append({"role": "assistant", "content": response.message.content})
 

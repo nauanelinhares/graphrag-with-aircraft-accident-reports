@@ -7,15 +7,16 @@ st.set_page_config(page_title='Main App', page_icon=':airplane:', layout='wide',
 
 
 # Common elements for all pages
-st.sidebar.title('Common Sidebar')
-st.sidebar.write('This is a common sidebar element.')
+st.sidebar.title('Barra de tarefas')
+st.sidebar.write("""Este é uma tela para falar com chatbot que coleta informações sobre ocorrências aeronáuticas, normas e dados de voos passados. O chatbot foi criado para um trabalho de graduação 
+                 em 2024""")
 
 # Define the navigation menu
 pg = st.navigation(
   [
-   st.Page("pages/config.py", title="Config", icon="🔥"),
-   st.Page("pages/weather.py", title="Tempo", icon="🌦️"),
-   st.Page("pages/advice.py", title="Conselhos", icon="🛬")
+   st.Page("pages/weather.py", title="Dados de Voos passados", icon="🌦️"),
+      st.Page("pages/rules.py", title="Normas", icon="📃"),
+   st.Page("pages/advice.py", title="Oocorrências Aeronáuticas", icon="🛬")
    ]
 )
 
