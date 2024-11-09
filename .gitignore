@@ -6,3 +6,4 @@ data/
 lib/
 plugins/
 storage/
+*.pyc
