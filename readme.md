@@ -18,7 +18,7 @@ O objetivo é desenvolver um sistema de consulta capaz de responder perguntas re
 
 - **Python**: Linguagem base para a implementação.
 - **Streamlit**: Interface de visualização dos dados em tempo real.
-- **Neo4j**: Gerenciamento e consulta de grafos de conhecimento.
+- **Nebula Graph**: Gerenciamento e consulta de grafos de conhecimento.
 - **LlamaHub e Ollama**: Conexão e execução de modelos de linguagem, incluindo comparações entre modelos open-source e proprietários.
 - **Cohere Rerank**: Aperfeiçoamento de respostas do sistema de busca.
 
