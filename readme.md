@@ -65,4 +65,3 @@ A arquitetura se baseia em um fluxo de dados entre:
 
 ---
 
-Dessa forma, você pode colá-lo diretamente com a formatação correta para seu `README.md`.
